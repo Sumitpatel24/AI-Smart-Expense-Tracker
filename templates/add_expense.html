@@ -298,7 +298,7 @@
     {% endif %}
 {% endwith %}
 
-    <form method="POST" autocomplete="off">
+    <form method="POST" enctype="multipart/form-data" autocomplete="off">
 
         <!-- Amount -->
 
@@ -408,6 +408,25 @@
                 required>
 
         </div>
+        <!-- Receipt Upload -->
+
+    <div class="mb-4">
+
+    <label>
+
+        <i class="bi bi-receipt"></i>
+
+        Upload Receipt
+
+    </label>
+
+    <input
+        type="file"
+        name="receipt"
+        class="form-control"
+        accept=".jpg,.jpeg,.png,.pdf">
+
+    </div>
 
         <!-- Button -->
 
@@ -462,5 +481,25 @@ category.addEventListener("change", function(){
 
 </script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+
+setTimeout(function(){
+
+    document.querySelectorAll('.alert').forEach(function(alert){
+
+        alert.style.transition = "0.5s";
+        alert.style.opacity = "0";
+
+        setTimeout(function(){
+
+            alert.remove();
+
+        }, 500);
+
+    });
+
+}, 3000);
+
+</script>
 </body>
 </html>

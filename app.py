@@ -8,8 +8,12 @@ from flask import make_response
 import re
 from flask import flash
 from werkzeug.security import generate_password_hash, check_password_hash
+import os
+from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
+UPLOAD_FOLDER = 'static/profile_pics'
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.secret_key = "expense_tracker_secret"
 
 app.config['MYSQL_HOST'] = '127.0.0.1'
@@ -28,10 +32,10 @@ def register():
 
     if request.method == 'POST':
 
-        username = request.form['username']
-        email = request.form['email']
+        username = request.form['username'].strip()
+        email = request.form['email'].strip()
         password = request.form['password']
-        hashed_password = generate_password_hash(password)
+        security_answer = request.form['security_answer'].strip()
 
         # Password Validation
 
@@ -47,12 +51,18 @@ def register():
 
             return redirect('/register')
 
+        hashed_password = generate_password_hash(password)
+
         cur = mysql.connection.cursor()
 
         # Username Check
 
         cur.execute(
-            "SELECT * FROM users WHERE username=%s",
+            """
+            SELECT *
+            FROM users
+            WHERE username=%s
+            """,
             (username,)
         )
 
@@ -60,7 +70,10 @@ def register():
 
         if existing_user:
 
-            flash("Username already exists", "danger")
+            flash(
+                "Username already exists",
+                "danger"
+            )
 
             cur.close()
 
@@ -69,7 +82,11 @@ def register():
         # Email Check
 
         cur.execute(
-            "SELECT * FROM users WHERE email=%s",
+            """
+            SELECT *
+            FROM users
+            WHERE email=%s
+            """,
             (email,)
         )
 
@@ -77,7 +94,10 @@ def register():
 
         if existing_email:
 
-            flash("Email already registered", "danger")
+            flash(
+                "Email already registered",
+                "danger"
+            )
 
             cur.close()
 
@@ -86,23 +106,44 @@ def register():
         # Insert User
 
         cur.execute(
-        """
-       INSERT INTO users
-       (username,email,password)
-       VALUES(%s,%s,%s) 
-       """,
-      (username,email,hashed_password)
-       )
+            """
+            INSERT INTO users
+            (
+                username,
+                email,
+                password,
+                security_answer
+            )
+            VALUES
+            (
+                %s,
+                %s,
+                %s,
+                %s
+            )
+            """,
+            (
+                username,
+                email,
+                hashed_password,
+                security_answer
+            )
+        )
 
         mysql.connection.commit()
 
         cur.close()
 
-        flash("Registration Successful", "success")
+        flash(
+            "Registration Successful",
+            "success"
+        )
 
         return redirect('/login')
 
-    return render_template('register.html')
+    return render_template(
+        'register.html'
+    )
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -115,7 +156,11 @@ def login():
         cur = mysql.connection.cursor()
 
         cur.execute(
-            "SELECT * FROM users WHERE username=%s",
+            """
+            SELECT *
+            FROM users
+            WHERE username=%s
+            """,
             (username,)
         )
 
@@ -125,24 +170,44 @@ def login():
 
         if user and check_password_hash(user[3], password):
 
-            session['user'] = username
+            # Save Session
+            session['user'] = user[1]
+            session['role'] = user[5]
 
-            flash("Login Successful", "success")
+            flash(
+                "Login Successful",
+                "success"
+            )
 
+            # Admin Login
+            if user[5] == 'admin':
+
+                return redirect('/admin')
+
+            # Normal User Login
             return redirect('/dashboard')
 
         else:
 
-            flash("Invalid Username or Password", "danger")
+            flash(
+                "Invalid Username or Password",
+                "danger"
+            )
 
             return redirect('/login')
 
-    return render_template('login.html')
+    return render_template(
+        'login.html'
+    )
+
 @app.route('/dashboard')
 def dashboard():
 
     if 'user' not in session:
         return redirect('/login')
+
+    if session.get('role') == 'admin':
+        return redirect('/admin')
 
     cur = mysql.connection.cursor()
 
@@ -262,6 +327,32 @@ def dashboard():
 
     remaining = budget - total_expense
 
+    # Current Month Expense
+
+    cur.execute("""
+     SELECT IFNULL(SUM(amount),0)
+     FROM expenses
+     WHERE user_id=%s
+     AND MONTH(expense_date)=MONTH(CURDATE())
+     AND YEAR(expense_date)=YEAR(CURDATE())
+     """, (user_id,))
+
+    month_expense = float(cur.fetchone()[0])
+
+    # Last Month Expense
+
+    cur.execute("""
+     SELECT IFNULL(SUM(amount),0)
+     FROM expenses
+     WHERE user_id=%s
+     AND MONTH(expense_date)=MONTH(DATE_SUB(CURDATE(), INTERVAL 1 MONTH))
+     AND YEAR(expense_date)=YEAR(DATE_SUB(CURDATE(), INTERVAL 1 MONTH))
+     """, (user_id,))
+
+    last_month_expense = float(cur.fetchone()[0])
+
+    expense_difference = month_expense - last_month_expense
+
    # AI Spending Insights
 
     if total_transactions == 0:
@@ -351,6 +442,18 @@ def dashboard():
         """, (user_id,))
 
     recent_expenses = cur.fetchall()
+    
+    cur.execute("""
+      SELECT category,
+      SUM(amount) as total
+      FROM expenses
+      WHERE user_id=%s
+      GROUP BY category
+      ORDER BY total DESC
+      LIMIT 5
+      """, (user_id,))
+
+    top_categories = cur.fetchall()
 
     cur.close()
 
@@ -372,7 +475,10 @@ def dashboard():
         today_expense=today_expense,
         week_expense=week_expense,
         month_expense=month_expense,
-        ai_message=ai_message
+        last_month_expense=last_month_expense,
+        expense_difference=expense_difference,
+        ai_message=ai_message,
+        top_categories=top_categories
     )
 
 
@@ -392,7 +498,6 @@ def logout():
 def add_expense():
 
     if 'user' not in session:
-
         return redirect('/login')
 
     if request.method == 'POST':
@@ -435,6 +540,25 @@ def add_expense():
 
             expense_date = request.form['expense_date']
 
+            # Receipt Upload
+
+            receipt_file = request.files['receipt']
+
+            receipt_name = None
+
+            if receipt_file and receipt_file.filename != "":
+
+                receipt_name = secure_filename(
+                    receipt_file.filename
+                )
+
+                receipt_file.save(
+                    os.path.join(
+                        "static/receipts",
+                        receipt_name
+                    )
+                )
+
             cur = mysql.connection.cursor()
 
             cur.execute(
@@ -458,10 +582,12 @@ def add_expense():
                     amount,
                     category,
                     description,
-                    expense_date
+                    expense_date,
+                    receipt
                 )
                 VALUES
                 (
+                    %s,
                     %s,
                     %s,
                     %s,
@@ -474,7 +600,8 @@ def add_expense():
                     amount,
                     category,
                     description,
-                    expense_date
+                    expense_date,
+                    receipt_name
                 )
             )
 
@@ -501,6 +628,7 @@ def add_expense():
     return render_template(
         'add_expense.html'
     )
+
 @app.route('/expenses')
 def expenses():
 
@@ -514,39 +642,88 @@ def expenses():
 
     cur = mysql.connection.cursor()
 
+    # Get User ID
+
     cur.execute(
-        "SELECT id FROM users WHERE username=%s",
+        """
+        SELECT id
+        FROM users
+        WHERE username=%s
+        """,
         (session['user'],)
     )
 
     user = cur.fetchone()
+
     user_id = user[0]
 
+    # Base Query
+
     query = """
-        SELECT id, amount, category,
-               description, expense_date
+        SELECT
+            id,
+            amount,
+            category,
+            description,
+            expense_date,
+            receipt
         FROM expenses
         WHERE user_id=%s
     """
 
     values = [user_id]
 
+    # Search Description
+
     if keyword:
-        query += " AND description LIKE %s"
-        values.append(f"%{keyword}%")
+
+        query += """
+            AND description LIKE %s
+        """
+
+        values.append(
+            f"%{keyword}%"
+        )
+
+    # Category Filter
 
     if category:
-        query += " AND category=%s"
-        values.append(category)
+
+        query += """
+            AND category=%s
+        """
+
+        values.append(
+            category
+        )
+
+    # Date Filter
 
     if start_date and end_date:
-        query += " AND expense_date BETWEEN %s AND %s"
-        values.append(start_date)
-        values.append(end_date)
 
-    query += " ORDER BY expense_date DESC"
+        query += """
+            AND expense_date
+            BETWEEN %s AND %s
+        """
 
-    cur.execute(query, tuple(values))
+        values.append(
+            start_date
+        )
+
+        values.append(
+            end_date
+        )
+
+    # Latest First
+
+    query += """
+        ORDER BY expense_date DESC
+    """
+
+    cur.execute(
+        query,
+        tuple(values)
+    )
 
     expenses = cur.fetchall()
 
@@ -696,7 +873,22 @@ def download_report():
     if 'user' not in session:
         return redirect('/login')
 
+    from reportlab.lib import colors
+    from reportlab.platypus import (
+        SimpleDocTemplate,
+        Table,
+        TableStyle,
+        Paragraph,
+        Spacer
+    )
+    from reportlab.lib.styles import getSampleStyleSheet
+    from io import BytesIO
+    from flask import send_file
+    from datetime import datetime
+
     cur = mysql.connection.cursor()
+
+    # User ID
 
     cur.execute(
         "SELECT id FROM users WHERE username=%s",
@@ -705,52 +897,141 @@ def download_report():
 
     user_id = cur.fetchone()[0]
 
+    # Expenses
+
     cur.execute("""
-        SELECT category,
-               amount,
-               description,
-               expense_date
+        SELECT
+        category,
+        amount,
+        description,
+        expense_date
         FROM expenses
         WHERE user_id=%s
+        ORDER BY expense_date DESC
     """, (user_id,))
 
     expenses = cur.fetchall()
 
-    response = make_response()
+    # Total Expense
 
-    response.headers['Content-Type'] = 'application/pdf'
-    response.headers['Content-Disposition'] = (
-        'attachment; filename=Expense_Report.pdf'
+    cur.execute("""
+        SELECT IFNULL(SUM(amount),0)
+        FROM expenses
+        WHERE user_id=%s
+    """, (user_id,))
+
+    total_expense = float(cur.fetchone()[0])
+
+    cur.close()
+
+    # PDF Buffer
+
+    buffer = BytesIO()
+
+    doc = SimpleDocTemplate(buffer)
+
+    styles = getSampleStyleSheet()
+
+    elements = []
+
+    # Title
+
+    title = Paragraph(
+        "AI Smart Expense Tracker Report",
+        styles['Title']
     )
 
-    pdf = canvas.Canvas(response.stream)
+    elements.append(title)
 
-    pdf.setTitle("Expense Report")
+    elements.append(Spacer(1, 12))
 
-    pdf.drawString(
-        50,
-        800,
-        "Expense Report"
+    # User Info
+
+    elements.append(
+        Paragraph(
+            f"<b>Username:</b> {session['user']}",
+            styles['Normal']
+        )
     )
 
-    y = 760
+    elements.append(
+        Paragraph(
+            f"<b>Generated On:</b> {datetime.now().strftime('%d-%m-%Y %H:%M')}",
+            styles['Normal']
+        )
+    )
+
+    elements.append(
+        Paragraph(
+            f"<b>Total Expense:</b> ₹ {total_expense}",
+            styles['Normal']
+        )
+    )
+
+    elements.append(
+        Paragraph(
+            f"<b>Total Transactions:</b> {len(expenses)}",
+            styles['Normal']
+        )
+    )
+
+    elements.append(Spacer(1, 20))
+
+    # Table Data
+
+    data = [
+        [
+            "Category",
+            "Amount",
+            "Description",
+            "Date"
+        ]
+    ]
 
     for expense in expenses:
 
-        line = (
-            f"{expense[0]} | "
-            f"₹{expense[1]} | "
-            f"{expense[2]} | "
-            f"{expense[3]}"
-        )
+        data.append([
+            expense[0],
+            f"₹ {expense[1]}",
+            expense[2] or "",
+            str(expense[3])
+        ])
 
-        pdf.drawString(50, y, line)
+    table = Table(
+        data,
+        colWidths=[100, 80, 180, 100]
+    )
 
-        y -= 20
+    table.setStyle(
+        TableStyle([
 
-    pdf.save()
+            ('BACKGROUND', (0,0), (-1,0), colors.darkblue),
 
-    return response
+            ('TEXTCOLOR', (0,0), (-1,0), colors.white),
+
+            ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+
+            ('GRID', (0,0), (-1,-1), 1, colors.black),
+
+            ('BACKGROUND', (0,1), (-1,-1), colors.whitesmoke),
+
+            ('ALIGN', (1,1), (1,-1), 'CENTER'),
+
+        ])
+    )
+
+    elements.append(table)
+
+    doc.build(elements)
+
+    buffer.seek(0)
+
+    return send_file(
+        buffer,
+        as_attachment=True,
+        download_name="AI_Expense_Report.pdf",
+        mimetype="application/pdf"
+    )
 
 @app.route('/search')
 def search():
@@ -829,76 +1110,161 @@ def filter_expenses():
 def export_excel():
 
     if 'user' not in session:
-     return redirect('/login')
+        return redirect('/login')
 
     from openpyxl import Workbook
-    from openpyxl.styles import Font
+    from openpyxl.styles import Font, PatternFill, Alignment
     from io import BytesIO
     from flask import send_file
+    from datetime import datetime
 
     cur = mysql.connection.cursor()
 
+    # User ID
+
     cur.execute(
-     "SELECT id FROM users WHERE username=%s",
-    (session['user'],)
+        "SELECT id FROM users WHERE username=%s",
+        (session['user'],)
     )
 
     user_id = cur.fetchone()[0]
 
+    # Expenses
+
     cur.execute("""
-    SELECT amount,
-           category,
-           description,
-           expense_date
-    FROM expenses
-    WHERE user_id=%s
+        SELECT amount,
+               category,
+               description,
+               expense_date
+        FROM expenses
+        WHERE user_id=%s
+        ORDER BY expense_date DESC
     """, (user_id,))
 
     expenses = cur.fetchall()
 
+    # Total Expense
+
+    cur.execute("""
+        SELECT IFNULL(SUM(amount),0)
+        FROM expenses
+        WHERE user_id=%s
+    """, (user_id,))
+
+    total_expense = float(cur.fetchone()[0])
+
     wb = Workbook()
     ws = wb.active
 
-    ws.title = "Expenses"
+    ws.title = "Expense Report"
 
-   # Headers
+    # Report Title
+
+    ws.merge_cells('A1:D1')
+
+    title = ws['A1']
+
+    title.value = "AI Smart Expense Tracker Report"
+
+    title.font = Font(
+        bold=True,
+        size=18
+    )
+
+    title.alignment = Alignment(
+        horizontal='center'
+    )
+
+    # Username
+
+    ws['A3'] = "Username"
+    ws['B3'] = session['user']
+
+    # Date
+
+    ws['A4'] = "Generated On"
+    ws['B4'] = datetime.now().strftime("%d-%m-%Y %H:%M")
+
+    # Total Expense
+
+    ws['A5'] = "Total Expense"
+    ws['B5'] = f"₹ {total_expense}"
+
+    # Total Transactions
+
+    ws['A6'] = "Total Transactions"
+    ws['B6'] = len(expenses)
+
+    # Headers
 
     headers = [
-    "Amount",
-    "Category",
-    "Description",
-    "Date"
+        "Amount",
+        "Category",
+        "Description",
+        "Date"
     ]
+
+    header_fill = PatternFill(
+        start_color="4F81BD",
+        end_color="4F81BD",
+        fill_type="solid"
+    )
+
+    header_row = 8
 
     for col_num, header in enumerate(headers, 1):
 
-     cell = ws.cell(row=1, column=col_num)
- 
-     cell.value = header
+        cell = ws.cell(
+            row=header_row,
+            column=col_num
+        )
 
-     cell.font = Font(bold=True)
+        cell.value = header
+
+        cell.font = Font(
+            bold=True,
+            color="FFFFFF"
+        )
+
+        cell.fill = header_fill
 
     # Data
 
-    for row_num, expense in enumerate(expenses, start=2):
+    for row_num, expense in enumerate(
+        expenses,
+        start=9
+    ):
 
-     ws.cell(row=row_num, column=1, value=expense[0])
-     ws.cell(row=row_num, column=2, value=expense[1])
-     ws.cell(row=row_num, column=3, value=expense[2])
-     ws.cell(row=row_num, column=4, value=expense[3])
+        ws.cell(
+            row=row_num,
+            column=1,
+            value=expense[0]
+        )
+
+        ws.cell(
+            row=row_num,
+            column=2,
+            value=expense[1]
+        )
+
+        ws.cell(
+            row=row_num,
+            column=3,
+            value=expense[2]
+        )
+
+        ws.cell(
+            row=row_num,
+            column=4,
+            value=expense[3]
+        )
 
     # Column Width
 
     ws.column_dimensions['A'].width = 15
     ws.column_dimensions['B'].width = 20
-    ws.column_dimensions['C'].width = 35
+    ws.column_dimensions['C'].width = 40
     ws.column_dimensions['D'].width = 20
-
-    # Date Format
-
-    for row in ws.iter_rows(min_row=2, max_col=4):
-
-      row[3].number_format = 'DD-MM-YYYY'
 
     file_stream = BytesIO()
 
@@ -906,11 +1272,13 @@ def export_excel():
 
     file_stream.seek(0)
 
+    cur.close()
+
     return send_file(
-     file_stream,
-     as_attachment=True,
-     download_name="Expense_Report.xlsx",
-     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        file_stream,
+        as_attachment=True,
+        download_name="AI_Expense_Report.xlsx",
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
 @app.route('/profile')
@@ -923,13 +1291,13 @@ def profile():
 
     # User Details
     cur.execute(
-        """
-        SELECT id, username, email
-        FROM users
-        WHERE username=%s
-        """,
-        (session['user'],)
-    )
+    """
+    SELECT id, username, email, profile_pic
+    FROM users
+    WHERE username=%s
+    """,
+    (session['user'],)
+     )
 
     user = cur.fetchone()
 
@@ -1135,5 +1503,262 @@ def toggle_theme():
         session['theme'] = 'dark'
 
     return redirect(request.referrer)
+
+@app.route('/admin')
+def admin():
+
+    if 'user' not in session:
+        return redirect('/login')
+
+    if session.get('role') != 'admin':
+
+        flash(
+            "Access Denied",
+            "danger"
+        )
+
+        return redirect('/dashboard')
+
+    cur = mysql.connection.cursor()
+
+    # Total Users
+
+    cur.execute(
+        "SELECT COUNT(*) FROM users"
+    )
+
+    total_users = cur.fetchone()[0]
+
+    # Total Expenses
+
+    cur.execute(
+        "SELECT COUNT(*) FROM expenses"
+    )
+
+    total_expenses = cur.fetchone()[0]
+
+    # Total Amount
+
+    cur.execute(
+        """
+        SELECT IFNULL(SUM(amount),0)
+        FROM expenses
+        """
+    )
+
+    total_amount = float(cur.fetchone()[0])
+
+    # Total Admins
+
+    cur.execute(
+        """
+        SELECT COUNT(*)
+        FROM users
+        WHERE role='admin'
+        """
+    )
+
+    total_admins = cur.fetchone()[0]
+
+    # Total Users (Normal)
+
+    cur.execute(
+        """
+        SELECT COUNT(*)
+        FROM users
+        WHERE role='user'
+        """
+    )
+
+    total_normal_users = cur.fetchone()[0]
+
+    # Average Expense
+
+    cur.execute(
+        """
+        SELECT IFNULL(AVG(amount),0)
+        FROM expenses
+        """
+    )
+
+    average_expense = round(
+        float(cur.fetchone()[0]),
+        2
+    )
+
+    # Users List
+
+    cur.execute(
+        """
+        SELECT
+            id,
+            username,
+            email,
+            role
+        FROM users
+        ORDER BY id DESC
+        """
+    )
+
+    users = cur.fetchall()
+
+    cur.close()
+
+    return render_template(
+        'admin.html',
+        total_users=total_users,
+        total_expenses=total_expenses,
+        total_amount=total_amount,
+        total_admins=total_admins,
+        total_normal_users=total_normal_users,
+        average_expense=average_expense,
+        users=users
+    )
+
+@app.route('/delete_user/<int:user_id>')
+def delete_user(user_id):
+
+    if 'user' not in session:
+        return redirect('/login')
+
+    if session.get('role') != 'admin':
+
+        flash(
+            "Access Denied",
+            "danger"
+        )
+
+        return redirect('/dashboard')
+
+    cur = mysql.connection.cursor()
+
+    # Admin khud ko delete na kar sake
+
+    cur.execute(
+        "SELECT username FROM users WHERE id=%s",
+        (user_id,)
+    )
+
+    user = cur.fetchone()
+
+    if user and user[0] == session['user']:
+
+        flash(
+            "You cannot delete yourself",
+            "danger"
+        )
+
+        cur.close()
+
+        return redirect('/admin')
+
+    # User Expenses Delete
+
+    cur.execute(
+        "DELETE FROM expenses WHERE user_id=%s",
+        (user_id,)
+    )
+
+    # Budget Delete
+
+    cur.execute(
+        "DELETE FROM budgets WHERE user_id=%s",
+        (user_id,)
+    )
+
+    # User Delete
+
+    cur.execute(
+        "DELETE FROM users WHERE id=%s",
+        (user_id,)
+    )
+
+    mysql.connection.commit()
+
+    cur.close()
+
+    flash(
+        "User Deleted Successfully",
+        "success"
+    )
+
+    return redirect('/admin')
+
+@app.route('/forgot_password', methods=['GET', 'POST'])
+def forgot_password():
+
+    if request.method == 'POST':
+
+        username = request.form['username'].strip()
+        answer = request.form['security_answer'].strip()
+        new_password = request.form['new_password']
+
+        cur = mysql.connection.cursor()
+
+        cur.execute(
+            """
+            SELECT security_answer
+            FROM users
+            WHERE username=%s
+            """,
+            (username,)
+        )
+
+        user = cur.fetchone()
+
+        db_answer = ""
+
+        if user and user[0]:
+
+            db_answer = str(user[0]).strip().lower()
+
+        entered_answer = answer.strip().lower()
+
+        print("Database Answer =", db_answer)
+        print("Entered Answer =", entered_answer)
+
+        if db_answer == entered_answer:
+
+            hashed_password = generate_password_hash(
+                new_password
+            )
+
+            cur.execute(
+                """
+                UPDATE users
+                SET password=%s
+                WHERE username=%s
+                """,
+                (
+                    hashed_password,
+                    username
+                )
+            )
+
+            mysql.connection.commit()
+
+            flash(
+                "Password Reset Successful",
+                "success"
+            )
+
+            cur.close()
+
+            return redirect('/login')
+
+        else:
+
+            flash(
+                "Invalid Security Answer",
+                "danger"
+            )
+
+            cur.close()
+
+            return redirect('/forgot_password')
+
+    return render_template(
+        'forgot_password.html'
+    )
 if __name__ == '__main__':
     app.run(debug=True)

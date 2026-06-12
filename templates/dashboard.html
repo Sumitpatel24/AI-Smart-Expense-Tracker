@@ -403,9 +403,12 @@ body.light .table th{
             Logout
 
         </a>
+        
         <a href="/toggle_theme" class="btn btn-light">
         🌙 / ☀️ Theme
         </a>
+
+        
 
     </div>
 
@@ -595,7 +598,65 @@ body.light .table th{
     </div>
 
 </div>
-    <!-- AI Suggestion -->
+ 
+<div class="row mt-4">
+
+    <div class="col-md-4 mb-3">
+
+        <div class="card h-100">
+
+            <div class="card-body">
+
+                <h5>Current Month</h5>
+
+                <h2>
+                    ₹ {{ month_expense }}
+                </h2>
+
+            </div>
+
+        </div>
+
+    </div>
+
+    <div class="col-md-4 mb-3">
+
+        <div class="card h-100">
+
+            <div class="card-body">
+
+                <h5>Last Month</h5>
+
+                <h2>
+                    ₹ {{ last_month_expense }}
+                </h2>
+
+            </div>
+
+        </div>
+
+    </div>
+
+    <div class="col-md-4 mb-3">
+
+        <div class="card h-100">
+
+            <div class="card-body">
+
+                <h5>Difference</h5>
+
+                <h2>
+                    ₹ {{ expense_difference }}
+                </h2>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+<!-- AI Suggestion -->
 
     <div class="card mt-4">
 
@@ -608,6 +669,30 @@ body.light .table th{
         <p class="mb-0">
             {{ ai_message }}
         </p>
+
+    </div>
+
+</div>
+
+<div class="card mt-4">
+
+    <div class="card-body">
+
+        <h4>🏆 Top Spending Categories</h4>
+
+        <ol>
+
+            {% for cat in top_categories %}
+
+            <li>
+
+                {{ cat[0] }} - ₹ {{ cat[1] }}
+
+            </li>
+
+            {% endfor %}
+
+        </ol>
 
     </div>
 

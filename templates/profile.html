@@ -323,6 +323,57 @@ h4{
     <h2 class="mb-4">
         👤 My Profile
     </h2>
+
+    <!-- Profile Picture -->
+
+<div class="card shadow mb-4">
+
+    <div class="card-body text-center">
+
+        {% if user[3] %}
+
+            <img
+                src="{{ url_for('static', filename='profile_pics/' + user[3]) }}"
+                width="180"
+                height="180"
+                class="rounded-circle border border-4 border-primary mb-3"
+                style="object-fit:cover;">
+
+        {% else %}
+
+            <img
+                src="https://cdn-icons-png.flaticon.com/512/149/149071.png"
+                width="180"
+                height="180"
+                class="rounded-circle border border-4 border-secondary mb-3">
+
+        {% endif %}
+
+        <form
+            action="/upload_profile_pic"
+            method="POST"
+            enctype="multipart/form-data">
+
+            <input
+                type="file"
+                name="profile_pic"
+                class="form-control mb-3"
+                accept="image/*"
+                required>
+
+            <button
+                type="submit"
+                class="btn btn-success">
+
+                📷 Upload Profile Picture
+
+            </button>
+
+        </form>
+
+    </div>
+
+</div>
       {% with messages = get_flashed_messages(with_categories=true) %}
 {% if messages %}
 
@@ -532,5 +583,26 @@ h4{
 </div>
 
 </div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+
+setTimeout(function(){
+
+    document.querySelectorAll('.alert').forEach(function(alert){
+
+        alert.style.transition = "0.5s";
+        alert.style.opacity = "0";
+
+        setTimeout(function(){
+
+            alert.remove();
+
+        }, 500);
+
+    });
+
+}, 3000);
+
+</script>
 </body>
 </html>

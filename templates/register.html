@@ -252,71 +252,104 @@ label{
 
         <form method="POST">
 
-            <div class="mb-3">
+    <div class="mb-3">
 
-                <label class="form-label">
-                    Username
-                </label>
+        <label class="form-label">
+            Username
+        </label>
 
-                <input
-                    type="text"
-                    name="username"
-                    class="form-control"
-                    placeholder="Enter Username"
-                    required>
+        <input
+            type="text"
+            name="username"
+            class="form-control"
+            placeholder="Enter Username"
+            required>
 
-            </div>
+    </div>
 
-            <div class="mb-3">
+    <div class="mb-3">
 
-                <label class="form-label">
-                    Email Address
-                </label>
+        <label class="form-label">
+            Email Address
+        </label>
 
-                <input
-                    type="email"
-                    name="email"
-                    class="form-control"
-                    placeholder="Enter Email Address"
-                    required>
+        <input
+            type="email"
+            name="email"
+            class="form-control"
+            placeholder="Enter Email Address"
+            required>
 
-            </div>
+    </div>
 
-            <div class="mb-3">
+    <div class="mb-3">
 
-                <label class="form-label">
-                    Password
-                </label>
-                <input
-                  type="password"
-                  name="password"
-                  class="form-control"
-                  placeholder="Create Strong Password"
-                  minlength="6"
-                  required>
+        <label class="form-label">
+            Password
+        </label>
 
-                <small class="password-note">
+        <input
+            type="password"
+            name="password"
+            class="form-control"
+            placeholder="Create Strong Password"
+            required>
 
-                    Password should contain:
-                    8+ characters,
-                    uppercase,
-                    lowercase,
-                    number,
-                    special character
+        <small class="password-note">
 
-                </small>
+            Password should contain:
+            8+ characters,
+            uppercase,
+            lowercase,
+            number,
+            special character
 
-            </div>
+        </small>
 
-            <button
-                type="submit"
-                class="btn register-btn">
+    </div>
 
-                Create Account
+    <!-- Security Question -->
 
-            </button>
+    <div class="mb-3">
 
-        </form>
+        <label class="form-label">
+            Security Question
+        </label>
+
+        <input
+            type="text"
+            class="form-control"
+            value="What is your favourite color?"
+            readonly>
+
+    </div>
+
+    <!-- Security Answer -->
+
+    <div class="mb-3">
+
+        <label class="form-label">
+            Security Answer
+        </label>
+
+        <input
+            type="text"
+            name="security_answer"
+            class="form-control"
+            placeholder="Enter Your Answer"
+            required>
+
+    </div>
+
+    <button
+        type="submit"
+        class="btn register-btn">
+
+        Create Account
+
+    </button>
+
+</form>
 
         <div class="login-link">
 
@@ -333,6 +366,25 @@ label{
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
 
+setTimeout(function(){
+
+    document.querySelectorAll('.alert').forEach(function(alert){
+
+        alert.style.transition = "0.5s";
+        alert.style.opacity = "0";
+
+        setTimeout(function(){
+
+            alert.remove();
+
+        }, 500);
+
+    });
+
+}, 3000);
+
+</script>
 </body>
 </html>
